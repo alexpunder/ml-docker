@@ -1,0 +1,89 @@
+name: ml-project
+
+volumes:
+  pg-data:
+
+networks:
+  ml-infra:
+    driver: bridge
+
+services:
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    profiles:
+      - development
+    env_file:
+      - .env
+    ports:
+      - 8000:8000
+    networks:
+      - ml-infra
+    
+    cpus: 0.5
+    mem_limit: 512M
+    mem_reservation: 256M
+
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/healthcheck || exit 1"]
+      interval: 30s
+      timeout: 2s
+      retries: 3
+      start_period: 30s
+
+    depends_on:
+      db:
+        condition: service_healthy
+      mlserver:
+        condition: service_started
+
+  mlserver:
+    image: burakince/mlflow:latest
+    profiles:
+      - development
+      - production
+    environment:
+      - MLFLOW_HOST=0.0.0.0
+      - MLFLOW_PORT=5000
+    networks:
+      - ml-infra
+
+    cpus: 0.3
+    mem_limit: 512M
+    mem_reservation: 256M
+
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:5000/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  db:
+    image: postgres:16-alpine
+    profiles:
+      - development
+      - production
+    environment:
+        POSTGRES_USER: postgres
+        POSTGRES_PASSWORD: secretpwd
+        POSTGRES_DB: postgres
+    env_file:
+      - .env
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    networks:
+      - ml-infra
+    
+    cpus: 0.2
+    mem_limit: 256M
+    mem_reservation: 128M
+
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 30s
